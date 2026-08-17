@@ -1,0 +1,412 @@
+# NOTE:
+# The public dataset supplied with this portfolio is synthetic and is
+# intended to demonstrate the analysis workflow only. It does not reproduce
+# the statistical findings of the original study.
+
+#注意：作品集内使用的数据是虚拟数据，仅用于展示代码流程。不代表原始统计结果
+
+
+
+```{r setup, include=FALSE}
+library("knitr")
+knitr::opts_chunk$set(
+  echo = TRUE, 
+  eval = TRUE, 
+  warning = FALSE,   
+  message = FALSE, 
+  error = TRUE)
+```
+
+```{r install, include=FALSE}
+library("pacman")
+packages <- c("tidyverse","ggplot2", 
+              "ggpubr","pwr","lme4","lmerTest","emmeans","DHARMa")
+p_load(packages, character.only=TRUE) 
+```
+
+#1. Data import and validation（数据导入和验证）
+
+#load the file(加载文件)
+```{r read, include=FALSE}
+library(here)
+
+df_all <- read_csv(
+  here("sample data",  "df_pass_sample.csv"))
+
+df_7v7 <- filter(df_all, Format == "7v7")#只提取部分数据
+df_11v11 <- filter(df_all, Format == "11v11")#只提取部分数据
+
+```
+
+# Basic validation of imported analysis data(简单检查导入的数据)
+```{r read, include=True}
+dim(df_all)
+names(df_all)
+
+colSums(is.na(
+  df_all[c(
+    "xT_added",
+    "start_zone",
+    "end_zone",
+    "score_state",
+    "Format",
+    "Condition")]))
+```
+#2.Outcome A:xT_added
+
+#2.1 Candidate models（建立候选模型）
+
+#Establish two candidate models, 
+#Model 1 is an additive model without an interaction term, 
+#Model 2 includes an interaction between Condition and Transition.
+#（建立两个模型候选模型，模型1为不包含交互项的加性模型，模型2包含 Condition 与 Transition 的交互效应。）
+```{r xT_added, include=TRUE}
+
+#11v11 game format:
+LM_11v11_1 <- lmer(xT_added ~ Condition+ Transition + score_state +(1 | match_id),
+           data = df_11v11)
+
+LM_11v11_2 <- lmer(xT_added ~ score_state+ Condition*Transition +(1 | match_id),
+             data = df_11v11)
+
+
+#7v7 game format:
+LM_7v7_1 <- lmer(xT_added ~ Condition+ Transition + score_state +(1 | match_id),
+             data = df_7v7)
+
+LM_7v7_2 <- lmer(xT_added ~ score_state+ Condition*Transition +(1 | match_id),
+               data = df_7v7)
+
+```
+
+
+
+#2.2 Model selection（模型选择）
+# Compare nested candidate models using likelihood-ratio tests and AIC.
+# The interaction model was retained only when it provided clear evidence
+# of improved model fit; otherwise, the simpler additive model was preferred.
+# 使用似然比检验和 AIC 比较嵌套候选模型。
+# 仅当交互模型能够明显改善模型拟合时保留交互项；
+# 否则优先选择更简约的加性模型。
+```{r xT_added, include=TRUE}
+anova(LM_11v11_1, LM_11v11_2)
+
+anova(LM_7v7_1, LM_7v7_2)
+```
+
+
+# 2.3. Model diagnostics(模型诊断)
+
+#11v11:
+```{r xT_added, include=TRUE}
+plot(LM_11v11_1)                  # residuals vs fitted
+qqnorm(resid(LM_11v11_1))
+qqline(resid(LM_11v11_1))
+hist(resid(LM_11v11_1))
+```
+#7v7:
+```{r xT_added, include=TRUE}
+plot(LM_7v7_1)                  # residuals vs fitted
+qqnorm(resid(LM_7v7_1))
+qqline(resid(LM_7v7_1))
+hist(resid(LM_7v7_1))
+```
+   
+
+
+#2.4 Statistical inference（统计推断）
+
+#check the summary of retained model
+```{r xT_added, include=TRUE}
+summary(LM_11v11_1)
+
+summary(LM_7v7_1)
+```
+#Model inference 
+```{r xT_added, include=TRUE}
+drop1(LM_11v11_1,test = "Chisq") 
+```
+```{r xT_added, include=TRUE}
+drop1(LM_7v7_1,test = "Chisq") 
+```
+## Post-hoc analysis of interaction effects(交互效应的事后分析)
+
+# In the original study, post-hoc pairwise comparisons were performed
+# where the retained model included a Condition × Transition interaction.
+# Synthetic demonstration data selected a different candidate model;
+# therefore, the code below demonstrates the original follow-up procedure.
+#原始研究中保留了一项包含Condition × Transition交互的模型，并进行了相应的事后分析，
+#尽管合成演示数据选择了不同的候选模型。以下代码展示了原始的后续分析流程。
+```{r xT_added, include=TRUE}
+contrast_7v7<- emmeans(
+  LM_7v7_2, ~ Condition | Transition)%>%
+  pairs(adjust = "tukey")  
+
+summary(contrast_7v7, infer = c(TRUE, TRUE))
+```
+
+# 2.5. Sensitivity analysis (敏感性分析)
+#To assess the influence of extreme xT-added values, 
+#a sign-preserving logarithmic transformation was applied:
+#为评估极端 xT-added 值对结果的影响，对 xT-added 进行保留符号的对数变换。
+
+#x′=sign(x)log(1+∣x∣). 
+
+```{r Sensitivity1, include=TRUE}
+#11v11:
+df_11v11$log_xt <- sign(df_11v11$xT_added) *
+              log1p(abs(df_11v11$xT_added))
+
+LM_log_11v11 <- lmer(
+  log_xt ~ Condition + Transition + score_state + (1|match_id),
+  data = df_11v11)
+
+drop1(LM_log_11v11,test = "Chisq")
+```
+```{r Sensitivity1, include=TRUE}
+#7v7:
+df_7v7$log_xt <- sign(df_7v7$xT_added) *
+              log1p(abs(df_7v7$xT_added))
+
+LM_log_7v7 <- lmer(
+  log_xt ~ Condition + Transition + score_state + (1|match_id),
+  data = df_7v7)
+
+drop1(LM_log_7v7,test = "Chisq")
+```
+
+   
+
+  
+#3. Outcome B: Positive xT
+
+# 3.1 Candidate models（建立候选模型）
+
+##Establish two candidate models, 
+#Model 1 is an additive model without an interaction term, 
+#Model 2 includes an interaction between Condition and Transition.
+#（建立两个模型候选模型，模型1为不包含交互项的加性模型，模型2包含 Condition 与 Transition 的交互效应。）
+```{r positive, include=TRUE}
+#11v11:
+GLM_11v11_1 <- glmer(
+  positive_xt ~ Condition + Transition + score_state + (1 | match_id),
+  data = df_11v11, family = binomial)
+
+GLM_11v11_2 <- glmer(
+  positive_xt ~ score_state+ Condition*Transition + (1 | match_id),
+  data = df_11v11, family = binomial)
+
+#7v7:
+GLM_7v7_1 <- glmer(
+  positive_xt ~ Condition + Transition + score_state + (1 | match_id),
+  data = df_7v7, family = binomial)
+
+GLM_7v7_2 <- glmer(
+  positive_xt ~ score_state+ Condition*Transition + (1 | match_id),
+  data = df_7v7, family = binomial)
+```
+
+##3.2 Model selection（模型选择）
+# Compare nested candidate models using likelihood-ratio tests and AIC.
+# The interaction model was retained only when it provided clear evidence
+# of improved model fit; otherwise, the simpler additive model was preferred.
+# 使用似然比检验和 AIC 比较嵌套候选模型。
+# 仅当交互模型能够明显改善模型拟合时保留交互项；
+# 否则优先选择更简约的加性模型。
+```{r positive, include=TRUE}
+anova(GLM_11v11_1, GLM_11v11_2)
+
+anova(GLM_7v7_1, GLM_7v7_2)
+```
+
+# 3.3. Model diagnostics(模型诊断)
+
+#DHARMa scaled residuals(标准化模拟残差)
+
+#11v11:
+```{r positive, include=TRUE}
+plot_glm_11 <- simulateResiduals(GLM_11v11_1)
+plot(plot_glm_11)
+```
+
+
+#7V7:
+```{r positive, include=TRUE}
+plot_glm_7 <- simulateResiduals(GLM_7v7_1)
+plot(plot_glm_7)
+```
+
+# 3.4 Statistical inference（统计推断）
+
+#check the summary of retained model
+```{r positive, include=TRUE}
+summary(GLM_11v11_1)
+
+summary(GLM_7v7_1)
+```
+#Model inference 
+```{r positive, include=TRUE}
+drop1(GLM_11v11_1,test = "Chisq") 
+
+drop1(GLM_7v7_1,test = "Chisq") 
+```
+
+
+# 3.5 Sensitivity analysis (敏感性分析)
+
+```{r Sensitivity2, include=TRUE}
+xtabs(~ Condition + Transition +Format + positive_xt, data = df_all)
+```
+#The frequency distribution of the original data showed an imbalanced pattern.
+#Defence-to-attacking transition type has extremely small sample size (n<5) under some cells.
+#To evaluate the robustness of the fitted models, 
+#this transition type was removed(only for sensitivity analysis)
+#原始数据的频数分布不均，defence-to-attacking的样本量极小 (n<5)，
+#为了测试模型的鲁棒性，将该传球类型去除（仅用于敏感性分析）
+
+
+```{r Sensitivity2, include=TRUE}
+#11v11
+sens_11v11 <- subset(
+  df_11v11,
+  !(Transition %in%
+      c("Defensive->Attacking"
+        )))
+
+GLM_sens_11v11 <- glmer(
+  positive_xt ~ Condition + Transition + score_state + (1 | match_id),
+  data = sens_11v11, family = binomial)
+
+#7v7
+sens_7v7 <- subset(
+  df_7v7,
+  !(Transition %in%
+      c("Defensive->Attacking" )))
+
+GLM_sens_7v7 <- glmer(
+  positive_xt ~ Condition + Transition + score_state + (1 | match_id),
+  data = sens_7v7, family = binomial)
+
+```        
+
+```{r Sensitivity2, include=TRUE}
+drop1(GLM_sens_11v11, test = "Chisq")
+        
+drop1(GLM_sens_7v7, test = "Chisq")
+```
+#4. Visualisation（分布可视化）
+
+#figure A：box plot for xt_added (图A：xT_added箱线图)
+
+```{r data process2ad, include=TRUE}
+ggplot(df_all, 
+       aes(x = xT_added, y = Transition, 
+                fill = Condition,
+                linetype = Condition))  +
+  geom_boxplot(linewidth = 0.2,width = 0.9,
+               position = position_dodge(width = 0.8),
+               outlier.size = 1
+               ) +
+  
+  facet_grid(Format ~ .) +
+  
+  scale_fill_grey(start = 0.85, end = 0.35) +
+  scale_linetype_manual(
+    values = c("Bio-banding" = "solid", "Chronological-age" = "dashed")
+  ) +
+
+  #draw a line on xT_added=0(添加xT_added=0的参考线)
+  scale_x_continuous(trans = "pseudo_log") +
+  geom_vline(xintercept = 0, 
+             linetype = "dashed", colour = "grey50") +
+  
+  theme_bw()+
+  labs(x ="xT_added" , y = "Pass Type",
+    title = "Distribution of xT_added values by pass type"
+  )
+
+```
+
+
+#figure B：Transition pattern(图B：传球结构图)
+
+```{r data process2ad, include=TRUE}
+transition_summary <- aggregate( 
+  list(n = df_all$Transition), 
+  by = list( Condition = df_all$Condition, 
+      Transition = df_all$Transition, 
+      Format = df_all$Format ), 
+  FUN = length )
+
+transition_summary <- transition_summary %>% 
+group_by(Condition, Format) %>% 
+mutate(pct = n / sum(n)) %>% 
+ungroup()
+```
+
+```{r data process2ad, include=TRUE}
+ggplot(
+  transition_summary,
+  aes(
+    x = Transition,
+    y = pct,
+    colour = Condition,shape= Condition
+  )) +
+  
+  scale_colour_manual(
+  values = c(
+    "Chronological-age" = "black",
+    "Bio-banding" = "grey"
+  ))+
+  
+geom_point(size = 2, alpha = 0.8,
+           position = position_dodge(width = 0.4)) +
+    scale_shape_manual(
+      values = c(
+      "Bio-banding" = 16,      
+      "Chronological-age" = 17    
+  ))+
+
+geom_line(
+  aes(group = Condition,linetype = Condition),
+  linewidth = 0.8
+)+
+      scale_linetype_manual(
+  values = c(
+    "Bio-banding" = "solid",
+    "Chronological-age" = "dashed"))+
+  
+  scale_x_discrete(
+    labels = c(
+      "Attacking->Attacking" = "Att→Att",
+      "Attacking->Middle" = "Att→Mid",
+      "Middle->Attacking" = "Mid→Att",
+      "Middle->Middle" = "Mid→Mid",
+      "Middle->Defensive" = "Mid→Def",
+      "Defensive->Middle" = "Def→Mid",
+      "Defensive->Defensive" = "Def→Def",
+      "Defensive->Attacking" = "Def→Att"
+    ))+
+  
+facet_grid(Format ~ .) +
+  
+  theme_bw()+
+  
+    labs(x = "Pass Type", y = "percentage",
+    title = "Percentage of pass type in each condition"
+  )
+```
+
+#5. Descriptive summary for pass success.
+#(附件：传球成功的分布描述)
+```{r descriptive data, include=TRUE}
+summary_df <-filter(df_all,`Action Type` == "Pass") %>%
+  group_by(Format, Condition) %>%
+  summarise(
+    Total = n(),
+    Successful = sum(Outcome == "Successful"),    #统计总数
+    Success_rate = mean(Outcome == "Successful"),# 百分比
+    .groups = "drop"
+  )
+summary_df
+```
